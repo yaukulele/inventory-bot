@@ -540,7 +540,7 @@ def auto_load_init_data():
         if count == 0:
             try:
                 from init_data import main as load_data
-                load_data(skip_delete=True)
+                load_data()
                 print("✅ 已自動匯入初始庫存資料")
             except Exception as e:
                 print(f"⚠️ 自動匯入失敗：{e}")
