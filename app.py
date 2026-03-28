@@ -19,8 +19,10 @@
 """
 
 import os
+import sys
 import sqlite3
 import datetime
+import traceback
 from contextlib import contextmanager
 
 from flask import Flask, request, abort
@@ -90,7 +92,7 @@ def now_str():
 # ── 模糊搜尋 ─────────────────────────────────────────
 
 def find_model(conn, keyword: str):
-    """秾確 → 不分大小寫 → 模糊包含"""
+    """精確 → 不分大小寫 → 模糊包含"""
     row = conn.execute("SELECT * FROM inventory WHERE model = ?", (keyword,)).fetchone()
     if row:
         return row
@@ -505,10 +507,16 @@ def parse_and_execute(text: str, user_name: str = "") -> str:
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
+    print(f"📨 Webhook received: {len(body)} bytes", flush=True)
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
+        print("❌ Invalid signature", flush=True)
         abort(400)
+    except Exception as e:
+        print(f"❌ Callback error: {e}", flush=True)
+        traceback.print_exc()
+        sys.stdout.flush()
     return "OK"
 
 
@@ -516,16 +524,24 @@ def callback():
 def handle_message(event):
     user_text = event.message.text
     user_id = event.source.user_id if hasattr(event.source, "user_id") else ""
+    print(f"💬 Message from {user_id[:8]}...: {user_text}", flush=True)
     reply = parse_and_execute(user_text, user_id)
+    print(f"📤 Reply: {reply[:80]}...", flush=True)
 
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message_with_http_info(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=reply)],
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply)],
+                )
             )
-        )
+        print("✅ Reply sent successfully", flush=True)
+    except Exception as e:
+        print(f"❌ Reply failed: {e}", flush=True)
+        traceback.print_exc()
+        sys.stdout.flush()
 
 
 @app.route("/", methods=["GET"])
@@ -541,16 +557,21 @@ def auto_load_init_data():
             try:
                 from init_data import main as load_data
                 load_data()
-                print("✅ 已自動匯入初始庫存資料")
+                print("✅ 已自動匯入初始庫存資料", flush=True)
             except Exception as e:
-                print(f"⚠️ 自動匯入失敗：{e}")
+                print(f"⚠️ 自動匯入失敗：{e}", flush=True)
+                traceback.print_exc()
         else:
-            print(f"📦 資料庫已有 {count} 筆商品，跳過匯入")
+            print(f"📦 資料庫已有 {count} 筆商品，跳過匯入", flush=True)
 
 
 # 啟動時執行初始化
+print("🚀 Starting inventory bot...", flush=True)
+print(f"📋 CHANNEL_SECRET set: {bool(CHANNEL_SECRET)}", flush=True)
+print(f"📋 CHANNEL_ACCESS_TOKEN set: {bool(CHANNEL_ACCESS_TOKEN)}", flush=True)
 init_db()
 auto_load_init_data()
+print("✅ Bot ready!", flush=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
