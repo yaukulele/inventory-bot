@@ -90,7 +90,7 @@ def now_str():
 # ── 模糊搜尋 ─────────────────────────────────────────
 
 def find_model(conn, keyword: str):
-    """精確 → 不分大小寫 → 模糊包含"""
+    """秾確 → 不分大小寫 → 模糊包含"""
     row = conn.execute("SELECT * FROM inventory WHERE model = ?", (keyword,)).fetchone()
     if row:
         return row
@@ -533,7 +533,25 @@ def health():
     return "🎸 樂器庫存管理系統運行中"
 
 
+def auto_load_init_data():
+    """啟動時檢查：若 inventory 表為空，自動匯入初始資料"""
+    with get_db() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+        if count == 0:
+            try:
+                from init_data import main as load_data
+                load_data(skip_delete=True)
+                print("✅ 已自動匯入初始庫存資料")
+            except Exception as e:
+                print(f"⚠️ 自動匯入失敗：{e}")
+        else:
+            print(f"📦 資料庫已有 {count} 筆商品，跳過匯入")
+
+
+# 啟動時執行初始化
+init_db()
+auto_load_init_data()
+
 if __name__ == "__main__":
-    init_db()
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=False)
