@@ -1,21 +1,21 @@
 """
-樂器庫存管理 LINE Bot
+æ¨¢å¨åº«å­ç®¡ç LINE Bot
 ==============================
-操作時只需打型號，品牌/分類存在資料庫裡。
-型號如有重複（不同品牌同型號），系統會列出讓你選。
+æä½æåªéæåèï¼åç/åé¡å­å¨è³æåº«è£¡ã
+åèå¦æéè¤ï¼ä¸ååçååèï¼ï¼ç³»çµ±æååºè®ä½ é¸ã
 
-指令說明：
-  進貨 FSX400C 5       → FSX400C 進貨 5 件
-  出貨 AG03-B 2        → AG03-B 出貨 2 件
-  盤點 FSX400C 10      → 校正為 10
-  查詢 FSX400C         → 查特定型號
-  查品牌 Yamaha        → 列出該品牌所有庫存
-  查分類 木吉他         → 列出木吉他所有型號
-  庫存                  → 全部庫存
-  缺貨                  → 列出庫存 0 的商品
-  紀錄 FSX400C         → 最近 10 筆異動
-  新增 品牌 型號 分類 數量 → 新增商品
-  幫助                  → 顯示指令
+æä»¤èªªæï¼
+  é²è²¨ FSX400C 5       â FSX400C é²è²¨ 5 ä»¶
+  åºè²¨ AG03-B 2        â AG03-B åºè²¨ 2 ä»¶
+  ç¤é» FSX400C 10      â æ ¡æ­£çº 10
+  æ¥è©¢ FSX400C         â æ¥ç¹å®åè
+  æ¥åç Yamaha        â ååºè©²åçææåº«å­
+  æ¥åé¡ æ¨åä»         â ååºæ¨åä»ææåè
+  åº«å­                  â å¨é¨åº«å­
+  ç¼ºè²¨                  â ååºåº«å­ 0 çåå
+  ç´é FSX400C         â æè¿ 10 ç­ç°å
+  æ°å¢ åç åè åé¡ æ¸é â æ°å¢åå
+  å¹«å©                  â é¡¯ç¤ºæä»¤
 """
 
 import os
@@ -32,12 +32,13 @@ from linebot.v3.messaging import (
     ApiClient,
     MessagingApi,
     ReplyMessageRequest,
+    PushMessageRequest,
     TextMessage,
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.v3.exceptions import InvalidSignatureError
 
-# ── 設定 ──────────────────────────────────────────────
+# ââ è¨­å® ââââââââââââââââââââââââââââââââââââââââââââââ
 app = Flask(__name__)
 
 CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
@@ -49,7 +50,7 @@ handler = WebhookHandler(CHANNEL_SECRET)
 DB_PATH = os.environ.get("DB_PATH", "inventory.db")
 
 
-# ── 資料庫 ────────────────────────────────────────────
+# ââ è³æåº« ââââââââââââââââââââââââââââââââââââââââââââ
 
 def init_db():
     with get_db() as conn:
@@ -89,10 +90,10 @@ def now_str():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-# ── 模糊搜尋 ─────────────────────────────────────────
+# ââ æ¨¡ç³æå° âââââââââââââââââââââââââââââââââââââââââ
 
 def find_model(conn, keyword: str):
-    """精確 → 不分大小寫 → 模糊包含"""
+    """ç²¾ç¢º â ä¸åå¤§å°å¯« â æ¨¡ç³åå«"""
     row = conn.execute("SELECT * FROM inventory WHERE model = ?", (keyword,)).fetchone()
     if row:
         return row
@@ -113,17 +114,17 @@ def find_model(conn, keyword: str):
 
 
 def format_multi_match(rows):
-    lines = ["🔍 找到多個相符型號，請輸入完整型號："]
+    lines = ["ð æ¾å°å¤åç¸ç¬¦åèï¼è«è¼¸å¥å®æ´åèï¼"]
     for r in rows:
-        lines.append(f"  {r['model']}（{r['brand']} / {r['category']}）庫存 {r['quantity']}")
+        lines.append(f"  {r['model']}ï¼{r['brand']} / {r['category']}ï¼åº«å­ {r['quantity']}")
     return "\n".join(lines)
 
 
-# ── 庫存操作 ──────────────────────────────────────────
+# ââ åº«å­æä½ ââââââââââââââââââââââââââââââââââââââââââ
 
 def stock_in(model: str, amount: int, operator: str = "") -> str:
     if amount <= 0:
-        return "⚠️ 進貨數量必須大於 0"
+        return "â ï¸ é²è²¨æ¸éå¿é å¤§æ¼ 0"
     with get_db() as conn:
         found = find_model(conn, model)
         if isinstance(found, list):
@@ -136,25 +137,25 @@ def stock_in(model: str, amount: int, operator: str = "") -> str:
             )
             display = found["model"]
         else:
-            return f"❌ 找不到「{model}」，請先用「新增」指令建立商品"
+            return f"â æ¾ä¸å°ã{model}ãï¼è«åç¨ãæ°å¢ãæä»¤å»ºç«åå"
         conn.execute(
             "INSERT INTO logs (model, action, amount, result_qty, operator, created_at) VALUES (?,?,?,?,?,?)",
-            (display, "進貨", amount, new_qty, operator, now_str()),
+            (display, "é²è²¨", amount, new_qty, operator, now_str()),
         )
-    return f"✅ 進貨成功\n📦 {display} +{amount}\n📊 目前庫存：{new_qty}"
+    return f"â é²è²¨æå\nð¦ {display} +{amount}\nð ç®ååº«å­ï¼{new_qty}"
 
 
 def stock_out(model: str, amount: int, operator: str = "") -> str:
     if amount <= 0:
-        return "⚠️ 出貨數量必須大於 0"
+        return "â ï¸ åºè²¨æ¸éå¿é å¤§æ¼ 0"
     with get_db() as conn:
         found = find_model(conn, model)
         if isinstance(found, list):
             return format_multi_match(found)
         if not found:
-            return f"❌ 找不到「{model}」"
+            return f"â æ¾ä¸å°ã{model}ã"
         if found["quantity"] < amount:
-            return f"⚠️ 庫存不足！{found['model']} 目前只有 {found['quantity']} 件"
+            return f"â ï¸ åº«å­ä¸è¶³ï¼{found['model']} ç®ååªæ {found['quantity']} ä»¶"
         new_qty = found["quantity"] - amount
         conn.execute(
             "UPDATE inventory SET quantity = ?, updated_at = ? WHERE model = ?",
@@ -162,20 +163,20 @@ def stock_out(model: str, amount: int, operator: str = "") -> str:
         )
         conn.execute(
             "INSERT INTO logs (model, action, amount, result_qty, operator, created_at) VALUES (?,?,?,?,?,?)",
-            (found["model"], "出貨", amount, new_qty, operator, now_str()),
+            (found["model"], "åºè²¨", amount, new_qty, operator, now_str()),
         )
-    return f"✅ 出貨成功\n📦 {found['model']} -{amount}\n📊 目前庫存：{new_qty}"
+    return f"â åºè²¨æå\nð¦ {found['model']} -{amount}\nð ç®ååº«å­ï¼{new_qty}"
 
 
 def stock_adjust(model: str, amount: int, operator: str = "") -> str:
     if amount < 0:
-        return "⚠️ 盤點數量不可為負數"
+        return "â ï¸ ç¤é»æ¸éä¸å¯çºè² æ¸"
     with get_db() as conn:
         found = find_model(conn, model)
         if isinstance(found, list):
             return format_multi_match(found)
         if not found:
-            return f"❌ 找不到「{model}」，請先用「新增」指令建立商品"
+            return f"â æ¾ä¸å°ã{model}ãï¼è«åç¨ãæ°å¢ãæä»¤å»ºç«åå"
         old_qty = found["quantity"]
         conn.execute(
             "UPDATE inventory SET quantity = ?, updated_at = ? WHERE model = ?",
@@ -183,30 +184,30 @@ def stock_adjust(model: str, amount: int, operator: str = "") -> str:
         )
         conn.execute(
             "INSERT INTO logs (model, action, amount, result_qty, operator, created_at) VALUES (?,?,?,?,?,?)",
-            (found["model"], "盤點", amount, amount, operator, now_str()),
+            (found["model"], "ç¤é»", amount, amount, operator, now_str()),
         )
     diff = amount - old_qty
     sign = f"+{diff}" if diff >= 0 else str(diff)
-    return f"✅ 盤點完成\n📦 {found['model']} 校正為 {amount}（{sign}）"
+    return f"â ç¤é»å®æ\nð¦ {found['model']} æ ¡æ­£çº {amount}ï¼{sign}ï¼"
 
 
 def add_product(brand: str, model: str, category: str, quantity: int) -> str:
-    """新增商品"""
+    """æ°å¢åå"""
     if quantity < 0:
-        return "⚠️ 數量不可為負數"
+        return "â ï¸ æ¸éä¸å¯çºè² æ¸"
     with get_db() as conn:
         existing = conn.execute("SELECT * FROM inventory WHERE model = ?", (model,)).fetchone()
         if existing:
-            return f"⚠️ 「{model}」已存在（{existing['brand']} / {existing['category']}）庫存 {existing['quantity']}"
+            return f"â ï¸ ã{model}ãå·²å­å¨ï¼{existing['brand']} / {existing['category']}ï¼åº«å­ {existing['quantity']}"
         conn.execute(
             "INSERT INTO inventory (brand, model, category, quantity, updated_at) VALUES (?, ?, ?, ?, ?)",
             (brand, model, category, quantity, now_str()),
         )
         conn.execute(
             "INSERT INTO logs (model, action, amount, result_qty, operator, created_at) VALUES (?,?,?,?,?,?)",
-            (model, "新增", quantity, quantity, "", now_str()),
+            (model, "æ°å¢", quantity, quantity, "", now_str()),
         )
-    return f"✅ 新增成功\n🏷️ {brand} / {category}\n📦 {model} 庫存：{quantity}"
+    return f"â æ°å¢æå\nð·ï¸ {brand} / {category}\nð¦ {model} åº«å­ï¼{quantity}"
 
 
 def query_item(model: str) -> str:
@@ -215,12 +216,12 @@ def query_item(model: str) -> str:
         if isinstance(found, list):
             return format_multi_match(found)
         if not found:
-            return f"🔍 找不到「{model}」"
+            return f"ð æ¾ä¸å°ã{model}ã"
         return (
-            f"📦 {found['model']}\n"
-            f"🏷️ {found['brand']} / {found['category']}\n"
-            f"📊 庫存：{found['quantity']}\n"
-            f"🕐 更新：{found['updated_at']}"
+            f"ð¦ {found['model']}\n"
+            f"ð·ï¸ {found['brand']} / {found['category']}\n"
+            f"ð åº«å­ï¼{found['quantity']}\n"
+            f"ð æ´æ°ï¼{found['updated_at']}"
         )
 
 
@@ -236,19 +237,19 @@ def query_brand(brand: str) -> str:
                 (f"%{brand}%",),
             ).fetchall()
         if not rows:
-            return f"🔍 找不到品牌「{brand}」"
+            return f"ð æ¾ä¸å°åçã{brand}ã"
 
         total = sum(r["quantity"] for r in rows)
         in_stock = sum(1 for r in rows if r["quantity"] > 0)
-        lines = [f"🏷️ {brand}（{in_stock}/{len(rows)} 有庫存）", "─" * 22]
+        lines = [f"ð·ï¸ {brand}ï¼{in_stock}/{len(rows)} æåº«å­ï¼", "â" * 22]
         current_cat = None
         for r in rows:
             if r["category"] != current_cat:
                 current_cat = r["category"]
-                lines.append(f"\n  【{current_cat}】")
-            mark = "  " if r["quantity"] > 0 else "⛔"
-            lines.append(f"  {mark} {r['model']}：{r['quantity']}")
-        lines.append(f"\n合計 {total} 件")
+                lines.append(f"\n  ã{current_cat}ã")
+            mark = "  " if r["quantity"] > 0 else "â"
+            lines.append(f"  {mark} {r['model']}ï¼{r['quantity']}")
+        lines.append(f"\nåè¨ {total} ä»¶")
         return "\n".join(lines)
 
 
@@ -265,21 +266,21 @@ def query_category(category: str) -> str:
             ).fetchall()
         if not rows:
             cats = conn.execute("SELECT DISTINCT category FROM inventory ORDER BY category").fetchall()
-            cat_list = "、".join(r["category"] for r in cats)
-            return f"🔍 找不到分類「{category}」\n📋 現有分類：{cat_list}"
+            cat_list = "ã".join(r["category"] for r in cats)
+            return f"ð æ¾ä¸å°åé¡ã{category}ã\nð ç¾æåé¡ï¼{cat_list}"
 
         actual_cat = rows[0]["category"] if rows else category
         total = sum(r["quantity"] for r in rows)
         in_stock = sum(1 for r in rows if r["quantity"] > 0)
-        lines = [f"🏷️ {actual_cat}（{in_stock}/{len(rows)} 有庫存）", "─" * 22]
+        lines = [f"ð·ï¸ {actual_cat}ï¼{in_stock}/{len(rows)} æåº«å­ï¼", "â" * 22]
         current_brand = None
         for r in rows:
             if r["brand"] != current_brand:
                 current_brand = r["brand"]
-                lines.append(f"\n  【{current_brand}】")
-            mark = "  " if r["quantity"] > 0 else "⛔"
-            lines.append(f"  {mark} {r['model']}：{r['quantity']}")
-        lines.append(f"\n合計 {total} 件")
+                lines.append(f"\n  ã{current_brand}ã")
+            mark = "  " if r["quantity"] > 0 else "â"
+            lines.append(f"  {mark} {r['model']}ï¼{r['quantity']}")
+        lines.append(f"\nåè¨ {total} ä»¶")
         return "\n".join(lines)
 
 
@@ -289,9 +290,9 @@ def list_all() -> str:
             "SELECT brand, model, category, quantity FROM inventory ORDER BY brand, category, model"
         ).fetchall()
         if not rows:
-            return "📭 目前沒有任何庫存資料"
+            return "ð­ ç®åæ²æä»»ä½åº«å­è³æ"
 
-        lines = ["📋 庫存總覽", "═" * 22]
+        lines = ["ð åº«å­ç¸½è¦½", "â" * 22]
         current_brand = None
         current_cat = None
         total = 0
@@ -300,18 +301,18 @@ def list_all() -> str:
             if r["brand"] != current_brand:
                 current_brand = r["brand"]
                 current_cat = None
-                lines.append(f"\n🏢 {current_brand}")
+                lines.append(f"\nð¢ {current_brand}")
             if r["category"] != current_cat:
                 current_cat = r["category"]
-                lines.append(f"  【{current_cat}】")
-            mark = "  " if r["quantity"] > 0 else "⛔"
-            lines.append(f"  {mark} {r['model']}：{r['quantity']}")
+                lines.append(f"  ã{current_cat}ã")
+            mark = "  " if r["quantity"] > 0 else "â"
+            lines.append(f"  {mark} {r['model']}ï¼{r['quantity']}")
             total += r["quantity"]
             if r["quantity"] > 0:
                 in_stock_count += 1
 
-        lines.append(f"\n{'═' * 22}")
-        lines.append(f"共 {len(rows)} 型號 / {in_stock_count} 有庫存 / 合計 {total} 件")
+        lines.append(f"\n{'â' * 22}")
+        lines.append(f"å± {len(rows)} åè / {in_stock_count} æåº«å­ / åè¨ {total} ä»¶")
         return "\n".join(lines)
 
 
@@ -322,11 +323,11 @@ def list_low_stock(threshold: int = 0) -> str:
             (threshold,),
         ).fetchall()
         if not rows:
-            return "✅ 沒有缺貨商品！"
-        lines = [f"⚠️ {'缺貨' if threshold == 0 else f'低庫存（≤ {threshold}）'}", "─" * 22]
+            return "â æ²æç¼ºè²¨ååï¼"
+        lines = [f"â ï¸ {'ç¼ºè²¨' if threshold == 0 else f'ä½åº«å­ï¼âj$ {threshold}ï¼'}", "â" * 22]
         for r in rows:
-            lines.append(f"  ⛔ {r['brand']} {r['model']}（{r['category']}）：{r['quantity']}")
-        lines.append(f"\n共 {len(rows)} 項需補貨")
+            lines.append(f"  â {r['brand']} {r['model']}ï¼{r['category']}ï¼ï¼{r['quantity']}")
+        lines.append(f"\nå± {len(rows)} é éè£è²¨")
         return "\n".join(lines)
 
 
@@ -342,63 +343,63 @@ def query_logs(model: str) -> str:
             (model,),
         ).fetchall()
         if not rows:
-            return f"📭 「{model}」沒有異動紀錄"
-        lines = [f"📜 {model} 最近異動", "─" * 22]
+            return f"ð­ ã{model}ãæ²æç°åç´é"
+        lines = [f"ð {model} æè¿ç°å", "â" * 22]
         for r in rows:
-            op = f"（{r['operator'][:8]}）" if r["operator"] else ""
-            if r["action"] in ("盤點", "新增"):
-                lines.append(f"  {r['created_at']} {r['action']} → {r['result_qty']}{op}")
+            op = f"ï¼{r['operator'][:8]}ï¼" if r["operator"] else ""
+            if r["action"] in ("ç¤é»", "æ°å¢"):
+                lines.append(f"  {r['created_at']} {r['action']} â {r['result_qty']}{op}")
             else:
                 lines.append(
-                    f"  {r['created_at']} {r['action']} {r['amount']} → 剩 {r['result_qty']}{op}"
+                    f"  {r['created_at']} {r['action']} {r['amount']} â å© {r['result_qty']}{op}"
                 )
         return "\n".join(lines)
 
 
-HELP_TEXT = """📖 庫存管理指令說明
-══════════════════
-進貨 型號 數量
-  例：進貨 FSX400C 5
-  例：進貨 V1 OMC 3
+HELP_TEXT = """ð åº«å­ç®¡çæä»¤èªªæ
+ââââââââââââââââââ
+é²è²¨ åè æ¸é
+  ä¾ï¼é²è²¨ FSX400C 5
+  ä¾ï¼é²è²¨ V1 OMC 3
 
-出貨 型號 數量
-  例：出貨 AG03-B 2
+åºè²¨ åè æ¸é
+  ä¾ï¼åºè²¨ AG03-B 2
 
-盤點 型號 數量
-  例：盤點 FSX400C 10
+ç¤é» åè æ¸é
+  ä¾ï¼ç¤é» FSX400C 10
 
-查詢 型號
-  例：查詢 V1 OMC
+æ¥è©¢ åè
+  ä¾ï¼æ¥è©¢ V1 OMC
 
-查品牌 品牌
-  例：查品牌 Yamaha
+æ¥åç åç
+  ä¾ï¼æ¥åç Yamaha
 
-查分類 分類名
-  例：查分類 木吉他
+æ¥åé¡ åé¡å
+  ä¾ï¼æ¥åé¡ æ¨åä»
 
-庫存 → 全部庫存
+åº«å­ â å¨é¨åº«å­
 
-缺貨 → 庫存 0 的商品
-缺貨 3 → 庫存 ≤ 3
+ç¼ºè²¨ â åº«å­ 0 çåå
+ç¼ºè²¨ 3 â åº«å­ âj$ 3
 
-紀錄 型號
-  例：紀錄 FSX400C
+ç´é åè
+  ä¾ï¼ç´é FSX400C
 
-新增 品牌/型號/分類/數量
-  例：新增 Fender/Tele/電吉他/3
-  例：新增 Veelah/V1 OMC/面單/2
+æ°å¢ åç/åè/åé¡/æ¸é
+  ä¾ï¼æ°å¢ Fender/Tele/é»åä»/3
+  ä¾ï¼æ°å¢ Veelah/V1 OMC/é¢å®/2
 
-幫助 → 顯示此說明
+å¹«å© â é¡¯ç¤ºæ­¤èªªæ
 
-💡 型號支援模糊搜尋！"""
+ð¡ åèæ¯æ´æ¨¡ç³æå°ï¼"""
 
 
-# ── 訊息處理 ──────────────────────────────────────────
+# ââ è¨æ¯èç ââââââââââââââââââââââââââââââââââââââââââ
 
 def _extract_model_and_amount(parts):
-    """從 parts 中取出型號（可能有空格）和數量（最後一個數字）
-    例: ['V1', 'OMC', '5'] → ('V1 OMC', 5)
-    例: ['FSX400C', '5']  → ('FSX400C', 5)
+    """å¾ parts ä¸­ååºåèï¼å¯è½æç©ºæ ¼ï¼åæ¸éï¼æå¾ä¸åæ¸å­ï¼
+    ä¾: ['V1', 'OMC', '5'] â ('V1 OMC', 5)
+    ä¾: ['FSX400C', '5']  â ('FSX400C', 5)
     """
     if len(parts) < 2:
         return None, None
@@ -411,8 +412,8 @@ def _extract_model_and_amount(parts):
 
 
 def _extract_model(parts):
-    """從 parts 中取出型號（所有 parts 合在一起）
-    例: ['V1', 'OMC'] → 'V1 OMC'
+    """å¾ parts ä¸­ååºåèï¼ææ parts åå¨ä¸èµ·ï¼
+    ä¾: ['V1', 'OMC'] â 'V1 OMC'
     """
     if not parts:
         return None
@@ -427,15 +428,15 @@ def parse_and_execute(text: str, user_name: str = "") -> str:
         return HELP_TEXT
 
     cmd = parts[0]
-    rest = parts[1:]  # 指令之後的所有內容
+    rest = parts[1:]  # æä»¤ä¹å¾çææå§å®¹
 
-    if cmd in ("幫助", "help", "說明", "指令"):
+    if cmd in ("å¹«å©", "help", "èªªæ", "æä»¤"):
         return HELP_TEXT
 
-    if cmd in ("庫存", "清單", "列表", "全部"):
+    if cmd in ("åº«å­", "æ¸å®", "åè¡¨", "å¨é¨"):
         return list_all()
 
-    if cmd in ("缺貨", "補貨", "低庫存"):
+    if cmd in ("ç¼ºè²¨", "è£è²¨", "ä½åº«å­"):
         threshold = 0
         if rest:
             try:
@@ -444,77 +445,77 @@ def parse_and_execute(text: str, user_name: str = "") -> str:
                 pass
         return list_low_stock(threshold)
 
-    if cmd in ("查品牌", "品牌"):
+    if cmd in ("æ¥åç", "åç"):
         if not rest:
-            return "⚠️ 格式：查品牌 品牌名\n例：查品牌 Yamaha"
+            return "â ï¸ æ ¼å¼ï¼æ¥åç åçå\nä¾ï¼æ¥åç Yamaha"
         return query_brand(rest[0])
 
-    if cmd in ("查分類", "分類"):
+    if cmd in ("æ¥åé¡", "åé¡"):
         if not rest:
-            return "⚠️ 格式：查分類 分類名\n例：查分類 木吉他"
+            return "â ï¸ æ ¼å¼ï¼æ¥åé¡ åé¡å\nä¾ï¼æ¥åé¡ æ¨åä»"
         return query_category(" ".join(rest))
 
-    # 進貨/出貨/盤點：最後一個是數量，中間全部是型號
-    if cmd in ("進貨", "入庫"):
+    # é²è²¨/åºè²¨/ç¤é»ï¼æå¾ä¸åæ¯æ¸éï¼ä¸­éå¨é¨æ¯åè
+    if cmd in ("é²è²¨", "å¥åº«"):
         model, amount = _extract_model_and_amount(rest)
         if model is None:
-            return "⚠️ 格式：進貨 型號 數量\n例：進貨 FSX400C 5\n例：進貨 V1 OMC 3"
+            return "â ï¸ æ ¼å¼ï¼é²è²¨ åè æ¸é\nä¾ï¼é²è²¨ FSX400C 5\nä¾ï¼é²è²¨ V1 OMC 3"
         return stock_in(model, amount, user_name)
 
-    if cmd in ("出貨", "出庫"):
+    if cmd in ("åºè²¨", "åºåº«"):
         model, amount = _extract_model_and_amount(rest)
         if model is None:
-            return "⚠️ 格式：出貨 型號 數量\n例：出貨 AG03-B 2"
+            return "â ï¸ æ ¼å¼ï¼åºè²¨ åè æ¸é\nä¾ï¼åºè²¨ AG03-B 2"
         return stock_out(model, amount, user_name)
 
-    if cmd in ("盤點", "校正", "調整"):
+    if cmd in ("ç¤é»", "æ ¡æ­£", "èª¿æ´"):
         model, amount = _extract_model_and_amount(rest)
         if model is None:
-            return "⚠️ 格式：盤點 型號 數量\n例：盤點 FSX400C 10"
+            return "â ï¸ æ ¼å¼ï¼ç¤é» åè æ¸é\nä¾ï¼ç¤é» FSX400C 10"
         return stock_adjust(model, amount, user_name)
 
-    # 查詢/紀錄：指令之後全部都是型號名
-    if cmd in ("查詢", "查", "看"):
+    # æ¥è©¢/ç´éï¼æä»¤ä¹å¾å¨é¨é½æ¯åèå
+    if cmd in ("æ¥è©¢", "æ¥", "ç"):
         model = _extract_model(rest)
         if not model:
-            return "⚠️ 格式：查詢 型號\n例：查詢 FSX400C"
+            return "â ï¸ æ ¼å¼ï¼æ¥è©¢ åè\nä¾ï¼æ¥è©¢ FSX400C"
         return query_item(model)
 
-    if cmd in ("紀錄", "記錄", "歷史", "log"):
+    if cmd in ("ç´é", "è¨é", "æ­·å²", "log"):
         model = _extract_model(rest)
         if not model:
-            return "⚠️ 格式：紀錄 型號\n例：紀錄 FSX400C"
+            return "â ï¸ æ ¼å¼ï¼ç´é åè\nä¾ï¼ç´é FSX400C"
         return query_logs(model)
 
-    # 新增：新增 品牌/型號/分類/數量（用 / 分隔，避免空格問題）
-    if cmd in ("新增", "建立", "add"):
+    # æ°å¢ï¼æ°å¢ åç/åè/åé¡/æ¸éï¼ç¨ / åéï¼é¿åç©ºæ ¼åé¡ï¼
+    if cmd in ("æ°å¢", "å»ºç«", "add"):
         joined = " ".join(rest)
         slash_parts = [p.strip() for p in joined.split("/")]
         if len(slash_parts) != 4:
-            return "⚠️ 格式：新增 品牌/型號/分類/數量\n例：新增 Fender/Telecaster/電吉他/3\n例：新增 Veelah/V1 OMC/面單吉他/2"
+            return "â ï¸ æ ¼å¼ï¼æ°å¢ åç/åè/åé¡/æ¸é\nä¾ï¼æ°å¢ Fender/Telecaster/é»åä»/3\nä¾ï¼æ°å¢ Veelah/V1 OMC/é¢å®åä»/2"
         brand, model, category = slash_parts[0], slash_parts[1], slash_parts[2]
         try:
             return add_product(brand, model, category, int(slash_parts[3]))
         except ValueError:
-            return "⚠️ 數量請輸入數字"
+            return "â ï¸ æ¸éè«è¼¸å¥æ¸å­"
 
-    return f"🤔 不認識「{cmd}」\n輸入「幫助」查看所有指令"
+    return f"ð¤ ä¸èªè­ã{cmd}ã\nè¼¸å¥ãå¹«å©ãæ¥çæææä»¤"
 
 
-# ── LINE Webhook ──────────────────────────────────────
+# ââ LINE Webhook ââââââââââââââââââââââââââââââââââââââ
 
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-    print(f"📨 Webhook received: {len(body)} bytes", flush=True)
+    print(f"ð¨ Webhook received: {len(body)} bytes", flush=True)
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        print("❌ Invalid signature", flush=True)
+        print("â Invalid signature", flush=True)
         abort(400)
     except Exception as e:
-        print(f"❌ Callback error: {e}", flush=True)
+        print(f"â Callback error: {e}", flush=True)
         traceback.print_exc()
         sys.stdout.flush()
     return "OK"
@@ -524,54 +525,77 @@ def callback():
 def handle_message(event):
     user_text = event.message.text
     user_id = event.source.user_id if hasattr(event.source, "user_id") else ""
-    print(f"💬 Message from {user_id[:8]}...: {user_text}", flush=True)
+    print(f"ð¬ Message from {user_id[:8]}...: {user_text}", flush=True)
     reply = parse_and_execute(user_text, user_id)
-    print(f"📤 Reply: {reply[:80]}...", flush=True)
+    print(f"ð¤ Reply: {reply[:80]}...", flush=True)
 
-    try:
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        # ååè©¦ replyï¼å¿«éåè¦ï¼åè²»ï¼
+        try:
             line_bot_api.reply_message_with_http_info(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[TextMessage(text=reply)],
                 )
             )
-        print("✅ Reply sent successfully", flush=True)
-    except Exception as e:
-        print(f"❌ Reply failed: {e}", flush=True)
-        traceback.print_exc()
-        sys.stdout.flush()
+            print("â Reply sent successfully", flush=True)
+            return
+        except Exception as e:
+            print(f"â ï¸ Reply failed (token expired?): {e}", flush=True)
+
+        # Reply å¤±æ â æ¹ç¨ Push Messageï¼åæ´ï¼
+        if user_id:
+            try:
+                line_bot_api.push_message_with_http_info(
+                    PushMessageRequest(
+                        to=user_id,
+                        messages=[TextMessage(text=reply)],
+                    )
+                )
+                print("â Push message sent successfully", flush=True)
+            except Exception as e2:
+                print(f"â Push message also failed: {e2}", flush=True)
+                traceback.print_exc()
+                sys.stdout.flush()
+        else:
+            print("â No user_id available for push fallback", flush=True)
 
 
 @app.route("/", methods=["GET"])
 def health():
-    return "🎸 樂器庫存管理系統運行中"
+    return "ð¸ æ¨å¨åº«å­ç®¡çç³»çµ±éè¡ä¸­"
+
+
+@app.route("/keep-alive", methods=["GET", "HEAD"])
+def keep_alive():
+    """ä¾å¤é¨ cron å®æå¼å«ï¼é²æ­¢ Render åè³ºæ¹æ¡ä¼ç """
+    return "OK"
 
 
 def auto_load_init_data():
-    """啟動時檢查：若 inventory 表為空，自動匯入初始資料"""
+    """ååææª¢æ¥ï¼è¥ inventory è¡¨çºç©ºï¼èªåå¯å¥åå§è³æ"""
     with get_db() as conn:
         count = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
         if count == 0:
             try:
                 from init_data import main as load_data
                 load_data()
-                print("✅ 已自動匯入初始庫存資料", flush=True)
+                print("â å·²èªåå¯å¥åå§åº«å­è³æ", flush=True)
             except Exception as e:
-                print(f"⚠️ 自動匯入失敗：{e}", flush=True)
+                print(f"â ï¸ èªåå¯å¥å¤±æï¼{e}", flush=True)
                 traceback.print_exc()
         else:
-            print(f"📦 資料庫已有 {count} 筆商品，跳過匯入", flush=True)
+            print(f"ð¦ è³æåº«å·²æ {count} ç­ååï¼è·³éå¯å¥", flush=True)
 
 
-# 啟動時執行初始化
-print("🚀 Starting inventory bot...", flush=True)
-print(f"📋 CHANNEL_SECRET set: {bool(CHANNEL_SECRET)}", flush=True)
-print(f"📋 CHANNEL_ACCESS_TOKEN set: {bool(CHANNEL_ACCESS_TOKEN)}", flush=True)
+# ååæå·è¡åå§å
+print("ð Starting inventory bot...", flush=True)
+print(f"ð CHANNEL_SECRET set: {bool(CHANNEL_SECRET)}", flush=True)
+print(f"ð CHANNEL_ACCESS_TOKEN set: {bool(CHANNEL_ACCESS_TOKEN)}", flush=True)
 init_db()
 auto_load_init_data()
-print("✅ Bot ready!", flush=True)
+print("â Bot ready!", flush=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
